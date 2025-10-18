@@ -13,9 +13,6 @@ load_dotenv(env_path)
 # Page config
 st.set_page_config(page_title="Cricbuzz Stats", layout="wide")
 
-# Title
-st.title("🏏 Cricbuzz Live Stats Dashboard")
-
 def get_db_connection():
     """Create and return a database connection with detailed error handling"""
     try:
@@ -43,6 +40,18 @@ def get_db_connection():
                 "2. Check MySQL: `sc query MySQL80`\n"
                 "3. Test works in PowerShell but not browser? → Browser cache issue!")
         return None
+
+# Title and connection test
+st.title("🏏 Cricbuzz Live Stats Dashboard")
+
+# Test connection on page load
+with st.spinner("Checking database connection..."):
+    test_conn = get_db_connection()
+    if test_conn and test_conn.is_connected():
+        st.success("✅ Database connected successfully!")
+        test_conn.close()
+    else:
+        st.stop()  # Stop execution if connection fails
 
 def get_recent_matches(limit=5):
     """Fetch recent matches from database"""
