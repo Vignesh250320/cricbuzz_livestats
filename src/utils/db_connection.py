@@ -29,7 +29,7 @@ class DatabaseConnection:
     def __init__(self):
         self.host = os.getenv('DB_HOST', 'localhost')
         self.user = os.getenv('DB_USER', 'root')
-        self.password = os.getenv('DB_PASSWORD', '')
+        self.password = os.getenv('DB_PASSWORD', 'vicky@123')
         self.database = os.getenv('DB_NAME', 'cricbuzz_db')
         self.connection = None
     
