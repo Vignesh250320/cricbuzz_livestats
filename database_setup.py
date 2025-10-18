@@ -19,11 +19,17 @@ def create_connection(use_database=True):
         load_dotenv(env_path)
         
         # Get database credentials
+        host = os.getenv('DB_HOST', '127.0.0.1')
+        # Convert localhost to 127.0.0.1 for better compatibility
+        if host == 'localhost':
+            host = '127.0.0.1'
+            
         db_config = {
-            'host': os.getenv('DB_HOST', 'localhost'),
+            'host': host,
             'user': os.getenv('DB_USER', 'root'),
             'password': os.getenv('DB_PASSWORD', 'vicky@123'),
-            'port': int(os.getenv('DB_PORT', 3306))
+            'port': int(os.getenv('DB_PORT', 3306)),
+            'connection_timeout': 10
         }
         
         if use_database:

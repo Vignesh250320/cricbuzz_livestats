@@ -27,7 +27,9 @@ class DatabaseConnection:
     """Manages MySQL database connections"""
     
     def __init__(self):
-        self.host = os.getenv('DB_HOST', 'localhost')
+        host = os.getenv('DB_HOST', '127.0.0.1')
+        # Convert localhost to 127.0.0.1 for better compatibility
+        self.host = '127.0.0.1' if host == 'localhost' else host
         self.user = os.getenv('DB_USER', 'root')
         self.password = os.getenv('DB_PASSWORD', 'vicky@123')
         self.database = os.getenv('DB_NAME', 'cricbuzz_db')
@@ -40,12 +42,15 @@ class DatabaseConnection:
                 host=self.host,
                 user=self.user,
                 password=self.password,
-                database=self.database
+                database=self.database,
+                connection_timeout=10,
+                autocommit=True
             )
             if self.connection.is_connected():
                 return self.connection
         except Error as e:
             st.error(f"Database connection error: {e}")
+            st.info("💡 Run test_connection.py to diagnose the issue")
             return None
     
     def close(self):
@@ -119,10 +124,16 @@ def initialize_database():
     """Create database and tables if they don't exist"""
     try:
         # Connect without database to create it
+        host = os.getenv('DB_HOST', '127.0.0.1')
+        # Convert localhost to 127.0.0.1 for better compatibility
+        if host == 'localhost':
+            host = '127.0.0.1'
+            
         connection = mysql.connector.connect(
-            host=os.getenv('DB_HOST', 'localhost'),
+            host=host,
             user=os.getenv('DB_USER', 'root'),
-            password=os.getenv('DB_PASSWORD', '')
+            password=os.getenv('DB_PASSWORD', 'vicky@123'),
+            connection_timeout=10
         )
         
         cursor = connection.cursor()

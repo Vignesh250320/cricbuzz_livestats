@@ -19,17 +19,27 @@ st.title("🏏 Cricbuzz Live Stats Dashboard")
 def get_db_connection():
     """Create and return a database connection with detailed error handling"""
     try:
+        # Try localhost first, then 127.0.0.1
+        host = os.getenv('DB_HOST', '127.0.0.1')
+        if host == 'localhost':
+            host = '127.0.0.1'
+            
         conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST', '127.0.0.1'),
+            host=host,
             user=os.getenv('DB_USER', 'root'),
             password=os.getenv('DB_PASSWORD', 'vicky@123'),
             database=os.getenv('DB_NAME', 'cricbuzz_db'),
             port=int(os.getenv('DB_PORT', 3306)),
-            connection_timeout=5
+            connection_timeout=10,
+            autocommit=True
         )
         return conn
     except Error as e:
         st.error(f"Database connection error: {e}")
+        st.info("💡 **Troubleshooting tips:**\n"
+                "- Check if MySQL service is running\n"
+                "- Verify credentials in .env file\n"
+                "- Run test_connection.py to diagnose")
         return None
 
 def get_recent_matches(limit=5):
