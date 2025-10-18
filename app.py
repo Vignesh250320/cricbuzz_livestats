@@ -1,149 +1,169 @@
-"""
-Cricbuzz LiveStats - Data Science Project
-Cricket Data Analytics using Python, SQL, and Pandas
-Technologies: Python, MySQL, Streamlit, Pandas, Data Analysis
-"""
-
 import streamlit as st
-from src.utils.db_connection import initialize_database
+import mysql.connector
+from mysql.connector import Error
+import pandas as pd
 import os
 from dotenv import load_dotenv
 
 # Load environment variables
-load_dotenv()
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+env_path = os.path.join(project_root, '.env')
+load_dotenv(env_path)
 
-# Page configuration
-st.set_page_config(
-    page_title="Cricket Data Analytics - Data Science Project",
-    page_icon="🏏",
-    layout="wide",
-    initial_sidebar_state="expanded"
+# Page config
+st.set_page_config(page_title="Cricbuzz Stats", layout="wide")
+
+# Title
+st.title("🏏 Cricbuzz Live Stats Dashboard")
+
+def get_db_connection():
+    """Create and return a database connection with detailed error handling"""
+    try:
+        conn = mysql.connector.connect(
+            host=os.getenv('DB_HOST', 'localhost'),
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD', 'vicky@123'),
+            database=os.getenv('DB_NAME', 'cricbuzz_db'),
+            port=int(os.getenv('DB_PORT', 3306)),
+            connection_timeout=5
+        )
+        return conn
+    except Error as e:
+        st.error(f"Database connection error: {e}")
+        return None
+
+def get_recent_matches(limit=5):
+    """Fetch recent matches from database"""
+    conn = get_db_connection()
+    if not conn:
+        return None
+        
+    try:
+        query = """
+            SELECT 
+                m.match_id, 
+                t1.team_name as team1, 
+                t2.team_name as team2, 
+                m.match_date, 
+                v.venue_name,
+                m.winner_id,
+                tw.team_name as winner_name
+            FROM matches m
+            JOIN teams t1 ON m.team1_id = t1.team_id
+            JOIN teams t2 ON m.team2_id = t2.team_id
+            LEFT JOIN venues v ON m.venue_id = v.venue_id
+            LEFT JOIN teams tw ON m.winner_id = tw.team_id
+            ORDER BY m.match_date DESC
+            LIMIT %s
+        """
+        df = pd.read_sql(query, conn, params=(limit,))
+        return df
+    except Error as e:
+        st.error(f"Database error: {e}")
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+def get_players(search_query=None):
+    """Fetch players from database with optional search"""
+    conn = get_db_connection()
+    if not conn:
+        return None
+        
+    try:
+        query = """
+            SELECT 
+                p.player_id, 
+                p.player_name, 
+                t.team_name, 
+                p.batting_style, 
+                p.bowling_style,
+                p.date_of_birth,
+                p.country
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+        """
+        
+        params = ()
+        if search_query:
+            query += " WHERE p.player_name LIKE %s OR t.team_name LIKE %s"
+            search_term = f"%{search_query}%"
+            params = (search_term, search_term)
+            
+        query += " ORDER BY p.player_name"
+        
+        df = pd.read_sql(query, conn, params=params)
+        return df
+    except Error as e:
+        st.error(f"Error loading players: {e}")
+        return None
+    finally:
+        if conn and conn.is_connected():
+            conn.close()
+
+# Sidebar for navigation
+page = st.sidebar.selectbox(
+    "Choose a page:",
+    ["Overview", "Players", "Matches", "Team Stats"]
 )
 
+# Page routing
+if page == "Overview":
+    st.header("📊 Overview")
+    st.write("Welcome to Cricbuzz Live Stats Dashboard!")
+    
+    # Show recent matches
+    st.subheader("Recent Matches")
+    df_matches = get_recent_matches(5)
+    
+    if df_matches is not None and not df_matches.empty:
+        for _, match in df_matches.iterrows():
+            with st.container():
+                cols = st.columns([1, 2, 1])
+                with cols[0]:
+                    st.markdown(f"**{match['team1']}**")
+                with cols[1]:
+                    st.markdown("<div style='text-align: center;'>vs</div>", unsafe_allow_html=True)
+                with cols[2]:
+                    st.markdown(f"**{match['team2']}**")
+                
+                venue = match.get('venue_name', 'Venue not specified')
+                date_str = match['match_date'].strftime('%d %b %Y') if pd.notna(match['match_date']) else 'Date not available'
+                st.caption(f"🏟️ {venue} | 📅 {date_str}")
+                
+                if pd.notna(match.get('winner_name')) and match.get('winner_name') != 'None':
+                    st.success(f"🏆 Winner: {match['winner_name']}")
+                else:
+                    st.info("🤝 Match Drawn/No Result")
+                
+                st.markdown("---")
 
-def main():
-    """Main application function"""
+elif page == "Players":
+    st.header("👥 Players")
     
-    # Initialize database on first run
-    if 'db_initialized' not in st.session_state:
-        with st.spinner("Initializing database..."):
-            if initialize_database():
-                st.session_state.db_initialized = True
-            else:
-                st.error("Failed to initialize database. Please check your configuration.")
-                st.stop()
+    # Search box
+    search_query = st.text_input("Search players by name or team:")
     
-    # Sidebar navigation
-    with st.sidebar:
-        st.title("🏏 Cricket Data Analytics")
-        st.markdown("**Data Science Project**")
-        st.markdown("Python | SQL | Pandas | MySQL")
-        st.markdown("---")
-        
-        # Navigation menu
-        page = st.radio(
-            "Navigation",
-            ["🏠 Home", "📱 Live Matches", "📊 Top Stats", "🔍 SQL Queries", "🛠️ CRUD Operations"],
-            label_visibility="collapsed"
-        )
-        
-        st.markdown("---")
-        
-        # Database status
-        st.markdown("### 📊 Database Status")
-        if check_database_connection():
-            st.success("✅ Connected")
+    # Get players data
+    players_df = get_players(search_query if search_query else None)
+    
+    if players_df is not None:
+        if not players_df.empty:
+            st.write(f"Found {len(players_df)} players:")
+            
+            # Show as cards
+            cols = st.columns(3)  # 3 columns for the cards
+            
+            for idx, player in players_df.iterrows():
+                with cols[idx % 3]:
+                    with st.container():
+                        st.markdown(f"### {player['player_name']}")
+                        st.markdown(f"**Team:** {player['team_name'] or 'N/A'}")
+                        st.markdown(f"**Batting:** {player['batting_style'] or 'N/A'}")
+                        st.markdown(f"**Bowling:** {player['bowling_style'] or 'N/A'}")
+                        if pd.notna(player.get('date_of_birth')):
+                            st.markdown(f"**Age:** {pd.Timestamp.now().year - pd.to_datetime(player['date_of_birth']).year}")
+                        st.markdown("---")
         else:
-            st.error("❌ Disconnected")
-        
-        # API status
-        st.markdown("### 🌐 API Status")
-        if check_api_key():
-            st.success("✅ Configured")
-        else:
-            st.warning("⚠️ Not configured")
-        
-        st.markdown("---")
-        
-        # Quick stats
-        display_quick_stats()
-        
-        st.markdown("---")
-        st.caption("**Data Science Technologies:**")
-        st.caption("• Python Programming")
-        st.caption("• SQL Database (MySQL)")
-        st.caption("• Pandas for Data Analysis")
-        st.caption("• Streamlit for Visualization")
-        st.caption("• API Integration")
-    
-    # Main content area
-    if page == "🏠 Home":
-        from pages import home
-        home.show()
-    elif page == "📱 Live Matches":
-        from pages import live_matches
-        live_matches.show()
-    elif page == "📊 Top Stats":
-        from pages import top_stats
-        top_stats.show()
-    elif page == "🔍 SQL Queries":
-        from pages import sql_queries
-        sql_queries.show()
-    elif page == "🛠️ CRUD Operations":
-        from pages import crud_operations
-        crud_operations.show()
-
-
-def check_database_connection():
-    """Check if database connection is working"""
-    try:
-        from utils.db_connection import get_db_connection
-        db = get_db_connection()
-        result = db.execute_query("SELECT 1", fetch=True)
-        return result is not None
-    except:
-        return False
-
-
-def check_api_key():
-    """Check if API key is configured"""
-    api_key = os.getenv('RAPIDAPI_KEY')
-    return api_key is not None and api_key != ""
-
-
-def display_quick_stats():
-    """Display quick statistics in sidebar"""
-    
-    st.markdown("### 📈 Quick Stats")
-    
-    try:
-        from utils.db_connection import get_db_connection
-        db = get_db_connection()
-        
-        # Count players
-        players = db.execute_query("SELECT COUNT(*) as count FROM players")
-        player_count = players[0]['count'] if players else 0
-        
-        # Count teams
-        teams = db.execute_query("SELECT COUNT(*) as count FROM teams")
-        team_count = teams[0]['count'] if teams else 0
-        
-        # Count matches
-        matches = db.execute_query("SELECT COUNT(*) as count FROM matches")
-        match_count = matches[0]['count'] if matches else 0
-        
-        # Display metrics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Players", player_count)
-            st.metric("Teams", team_count)
-        with col2:
-            st.metric("Matches", match_count)
-            st.metric("Venues", "—")
-    
-    except Exception as e:
-        st.caption("Stats unavailable")
-
-
-if __name__ == "__main__":
-    main()
+            st.info("No players found matching your search.")
