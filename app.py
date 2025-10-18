@@ -19,6 +19,7 @@ st.title("🏏 Cricbuzz Live Stats Dashboard")
 def get_db_connection():
     """Create and return a database connection with detailed error handling"""
     try:
+        # Force fresh connection each time
         conn = mysql.connector.connect(
             host='localhost',
             user=os.getenv('DB_USER', 'root'),
@@ -28,15 +29,19 @@ def get_db_connection():
             connection_timeout=10,
             autocommit=True,
             charset='utf8mb4',
-            use_unicode=True
+            use_unicode=True,
+            pool_name=None,  # Disable connection pooling
+            pool_size=1
         )
-        return conn
+        if conn.is_connected():
+            return conn
     except Error as e:
         st.error(f"❌ Database connection failed: {e}")
+        st.warning("⚠️ **Browser showing old error?** Press **Ctrl+Shift+R** to hard refresh!")
         st.info("💡 **Troubleshooting:**\n"
-                "1. Check MySQL is running: `sc query MySQL80`\n"
-                "2. Verify password in .env file\n"
-                "3. Run test: `python test_streamlit_connection.py`")
+                "1. Hard refresh browser: **Ctrl+Shift+R** (Chrome) or **Ctrl+F5**\n"
+                "2. Check MySQL: `sc query MySQL80`\n"
+                "3. Test works in PowerShell but not browser? → Browser cache issue!")
         return None
 
 def get_recent_matches(limit=5):
