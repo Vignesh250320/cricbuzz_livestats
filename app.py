@@ -20,7 +20,7 @@ def get_db_connection():
     """Create and return a database connection with detailed error handling"""
     try:
         conn = mysql.connector.connect(
-            host=os.getenv('DB_HOST', 'localhost'),
+            host=os.getenv('DB_HOST', '127.0.0.1'),
             user=os.getenv('DB_USER', 'root'),
             password=os.getenv('DB_PASSWORD', 'vicky@123'),
             database=os.getenv('DB_NAME', 'cricbuzz_db'),
