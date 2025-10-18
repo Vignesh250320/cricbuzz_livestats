@@ -1,0 +1,27 @@
+# Ignore everything by default
+*
+
+# But include these essential files
+!.gitignore
+!README.md
+!requirements.txt
+!app.py
+!.env.example
+
+# Include pages directory and its Python files
+!pages/
+!pages/*.py
+
+# Include utils directory and its Python files
+!utils/
+!utils/*.py
+
+# Exclude Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Exclude environment files
+.env
+venv/
