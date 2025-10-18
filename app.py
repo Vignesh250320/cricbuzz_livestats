@@ -18,38 +18,26 @@ st.title("🏏 Cricbuzz Live Stats Dashboard")
 
 def get_db_connection():
     """Create and return a database connection with detailed error handling"""
-    # Try multiple host formats for compatibility
-    hosts_to_try = ['localhost', '127.0.0.1']
-    last_error = None
-    
-    for host in hosts_to_try:
-        try:
-            conn = mysql.connector.connect(
-                host=host,
-                user=os.getenv('DB_USER', 'root'),
-                password=os.getenv('DB_PASSWORD', 'vicky@123'),
-                database=os.getenv('DB_NAME', 'cricbuzz_db'),
-                port=int(os.getenv('DB_PORT', 3306)),
-                connection_timeout=10,
-                autocommit=True,
-                charset='utf8mb4',
-                use_unicode=True
-            )
-            if conn.is_connected():
-                return conn
-        except Error as e:
-            last_error = e
-            continue
-    
-    # If all attempts failed, show error
-    if last_error:
-        st.error(f"❌ Database connection failed: {last_error}")
-        st.info("💡 **Quick Fix:**\n\n"
-                "The test script works, but Streamlit can't connect. Try:\n"
-                "1. Restart MySQL: `net stop MySQL80` then `net start MySQL80`\n"
-                "2. Check firewall settings\n"
-                "3. Verify .env credentials match MySQL")
-    return None
+    try:
+        conn = mysql.connector.connect(
+            host='localhost',
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD', 'vicky@123'),
+            database=os.getenv('DB_NAME', 'cricbuzz_db'),
+            port=int(os.getenv('DB_PORT', 3306)),
+            connection_timeout=10,
+            autocommit=True,
+            charset='utf8mb4',
+            use_unicode=True
+        )
+        return conn
+    except Error as e:
+        st.error(f"❌ Database connection failed: {e}")
+        st.info("💡 **Troubleshooting:**\n"
+                "1. Check MySQL is running: `sc query MySQL80`\n"
+                "2. Verify password in .env file\n"
+                "3. Run test: `python test_streamlit_connection.py`")
+        return None
 
 def get_recent_matches(limit=5):
     """Fetch recent matches from database"""
