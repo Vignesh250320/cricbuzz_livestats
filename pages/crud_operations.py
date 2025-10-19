@@ -6,37 +6,127 @@ import streamlit as st
 import pandas as pd
 from src.utils.db_connection import get_db_connection
 from datetime import datetime, date
+import subprocess
+import sys
+import os
 
 
 def show():
     """Display CRUD operations page"""
     
-    st.title("🛠️ CRUD Operations")
-    st.markdown("Manage cricket data with Create, Read, Update, and Delete operations")
+    st.title("🛠️ Database Management")
+    
+    # API-only mode notice
+    st.info("📡 **API Data Mode**: This database uses real cricket data from Cricbuzz API. "
+            "Manual CRUD operations are available for testing, but data is primarily managed via API.")
     
     # Tabs for different operations
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "➕ Create", 
-        "📖 Read", 
-        "✏️ Update", 
-        "🗑️ Delete",
-        "📊 Sample Data"
+    tab1, tab2, tab3 = st.tabs([
+        "📖 View Data", 
+        "🔄 Refresh from API",
+        "🛠️ Manual Operations"
     ])
     
     with tab1:
-        display_create_operations()
+        display_read_operations()  # View data
     
     with tab2:
-        display_read_operations()
+        display_api_refresh()  # Refresh from API
     
     with tab3:
-        display_update_operations()
+        st.subheader("🛠️ Manual Database Operations")
+        st.warning("⚠️ Manual operations are for testing only. Use 'Refresh from API' tab to update data.")
+        
+        manual_tab1, manual_tab2, manual_tab3, manual_tab4 = st.tabs([
+            "➕ Create", "✏️ Update", "🗑️ Delete", "📊 Sample Data"
+        ])
+        
+        with manual_tab1:
+            display_create_operations()
+        with manual_tab2:
+            display_update_operations()
+        with manual_tab3:
+            display_delete_operations()
+        with manual_tab4:
+            display_sample_data_loader()
+
+
+def display_api_refresh():
+    """Display API refresh interface"""
+    st.subheader("🔄 Refresh Data from Cricbuzz API")
     
-    with tab4:
-        display_delete_operations()
+    st.markdown("""
+    ### Fetch Latest Cricket Data
     
-    with tab5:
-        display_sample_data_loader()
+    This will fetch fresh data from the Cricbuzz API:
+    - ✅ Latest teams and players
+    - ✅ Recent matches
+    - ✅ Current series
+    - ✅ Player rankings and stats
+    
+    **Note:** Existing data will be updated, not replaced.
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Fetch Latest Data", type="primary"):
+            with st.spinner("Fetching data from Cricbuzz API..."):
+                try:
+                    # Run the API fetch script
+                    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+                    script_path = os.path.join(project_root, 'src', 'data', 'fetch_api_data.py')
+                    
+                    result = subprocess.run(
+                        [sys.executable, script_path],
+                        cwd=project_root,
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if result.returncode == 0:
+                        st.success("✅ Data fetched successfully from API!")
+                        st.info("Refresh the page to see updated data.")
+                        
+                        # Show summary from output
+                        if "DATA FETCH SUMMARY" in result.stdout:
+                            summary_start = result.stdout.find("DATA FETCH SUMMARY")
+                            summary = result.stdout[summary_start:summary_start+500]
+                            st.code(summary)
+                    else:
+                        st.error("❌ Error fetching data from API")
+                        with st.expander("Show error details"):
+                            st.code(result.stderr)
+                            
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+    
+    with col2:
+        if st.button("🗑️ Clear All & Fetch Fresh"):
+            st.warning("⚠️ This will delete ALL existing data and fetch fresh from API!")
+            if st.button("⚠️ Confirm Delete All"):
+                with st.spinner("Clearing database and fetching fresh data..."):
+                    try:
+                        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+                        script_path = os.path.join(project_root, 'clear_and_fetch_api.py')
+                        
+                        result = subprocess.run(
+                            [sys.executable, script_path],
+                            cwd=project_root,
+                            capture_output=True,
+                            text=True,
+                            input="yes\n"
+                        )
+                        
+                        if result.returncode == 0:
+                            st.success("✅ Database cleared and fresh data fetched!")
+                            st.info("Refresh the page to see new data.")
+                        else:
+                            st.error("❌ Error during operation")
+                            with st.expander("Show details"):
+                                st.code(result.stderr)
+                    except Exception as e:
+                        st.error(f"❌ Error: {e}")
 
 
 def display_create_operations():

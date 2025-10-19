@@ -1,5 +1,41 @@
-.venv/
+# Python
 __pycache__/
 *.pyc
-.DS_Store
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
 .env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
