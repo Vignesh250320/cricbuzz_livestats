@@ -1,309 +1,92 @@
-"""
-SQL Queries Page - Practice 25 SQL queries with interactive execution
-"""
-
+# pages/sql_queries.py
 import streamlit as st
-import pandas as pd
-from src.utils.db_connection import get_db_connection
-from src.features.sql_queries import SQLQueries
+from utils.db_connection import run_query
+from utils.api_handler import load_players_into_db
 
+# 25 SQL queries grouped
+QUERIES = {
+    "Beginner": [
+        ("Find all players from India with roles and styles",
+         "SELECT player_id, name, playing_role, batting_style, bowling_style FROM Players WHERE country = 'India';"),
+        ("Show matches played in last 7 days (sorted by date)",
+         "SELECT * FROM Matches WHERE match_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY match_date DESC;"),
+        ("Top 10 ODI run scorers with averages and centuries",
+         "SELECT player_id, name, total_runs, batting_average FROM Players WHERE batting_average IS NOT NULL ORDER BY total_runs DESC LIMIT 10;"),
+        ("Venues with capacity > 30000",
+         "SELECT * FROM Venues WHERE capacity > 30000;"),
+        ("Matches won by each team",
+         "SELECT winning_team, COUNT(*) AS wins FROM Matches WHERE winning_team IS NOT NULL GROUP BY winning_team ORDER BY wins DESC;"),
+        ("Count players by playing role",
+         "SELECT playing_role, COUNT(*) AS count FROM Players GROUP BY playing_role;"),
+        ("Highest batting score in each format",
+         # Assuming Batting_Performance includes format in Matches.format join
+         "SELECT m.format, bp.player_id, p.name, MAX(bp.runs) AS highest_score FROM Batting_Performance bp JOIN Matches m ON bp.match_id = m.match_id JOIN Players p ON bp.player_id = p.player_id GROUP BY m.format, bp.player_id, p.name ORDER BY m.format, highest_score DESC;"),
+        ("Series started in 2024 (matches grouped by series/description)",
+         "SELECT DISTINCT description, MIN(match_date) AS series_start FROM Matches WHERE YEAR(match_date) = 2024 GROUP BY description;")
+    ],
+    "Intermediate": [
+        ("All-rounders with 1000+ runs AND 50+ wickets",
+         "SELECT player_id, name, total_runs, total_wickets FROM Players WHERE total_runs >= 1000 AND total_wickets >= 50;"),
+        ("Last 20 completed matches with details",
+         "SELECT * FROM Matches WHERE winning_team IS NOT NULL ORDER BY match_date DESC LIMIT 20;"),
+        ("Player performance comparison across formats (sample)",
+         "SELECT p.player_id, p.name, m.format, SUM(bp.runs) AS runs, SUM(bw.wickets) AS wickets FROM Players p LEFT JOIN Batting_Performance bp ON p.player_id = bp.player_id LEFT JOIN Bowling_Performance bw ON p.player_id = bw.player_id LEFT JOIN Matches m ON bp.match_id = m.match_id OR bw.match_id = m.match_id GROUP BY p.player_id, m.format ORDER BY p.player_id;"),
+        ("Team performance: home vs away",
+         # Assumes Matches has venue/city info and Teams table
+         "SELECT m.team1 AS team, SUM(CASE WHEN m.winning_team = m.team1 THEN 1 ELSE 0 END) AS home_wins FROM Matches m GROUP BY m.team1;"),
+        ("Batting partnerships with 100+ combined runs",
+         # Requires partnership table - best-effort: look for two-player same-innings combined runs
+         "SELECT match_id, innings, SUM(runs) AS partnership_runs FROM Batting_Performance GROUP BY match_id, innings HAVING SUM(runs) >= 100;"),
+        ("Bowling performance at venues (3+ matches)",
+         "SELECT b.player_id, p.name, v.venue_id, v.name AS venue_name, AVG(b.economy_rate) AS avg_econ, COUNT(DISTINCT b.match_id) AS matches FROM Bowling_Performance b JOIN Players p ON b.player_id = p.player_id JOIN Matches m ON b.match_id = m.match_id JOIN Venues v ON m.venue_id = v.venue_id GROUP BY b.player_id, v.venue_id HAVING matches >= 3 ORDER BY avg_econ ASC;"),
+        ("Player performance in close matches (margin < 10 runs/wickets)",
+         "SELECT p.player_id, p.name, bp.match_id, bp.runs FROM Players p JOIN Batting_Performance bp ON p.player_id = bp.player_id JOIN Matches m ON bp.match_id = m.match_id WHERE (m.victory_margin IS NOT NULL AND CAST(m.victory_margin AS SIGNED) < 10) ORDER BY m.match_date DESC;"),
+        ("Batting trends year-over-year (since 2020)",
+         "SELECT YEAR(m.match_date) AS year, p.player_id, p.name, SUM(bp.runs) AS runs FROM Batting_Performance bp JOIN Matches m ON bp.match_id = m.match_id JOIN Players p ON bp.player_id = p.player_id WHERE YEAR(m.match_date) >= 2020 GROUP BY YEAR(m.match_date), p.player_id ORDER BY year, runs DESC;")
+    ],
+    "Advanced": [
+        ("Toss advantage analysis (who wins more after winning toss)",
+         "SELECT toss_winner, toss_decision, SUM(CASE WHEN winning_team = toss_winner THEN 1 ELSE 0 END) AS wins_after_toss, COUNT(*) AS matches FROM Matches GROUP BY toss_winner, toss_decision ORDER BY wins_after_toss DESC;"),
+        ("Most economical bowlers in limited-overs (min 20 matches)",
+         "SELECT bp.player_id, p.name, AVG(bp.economy_rate) AS avg_econ, COUNT(DISTINCT bp.match_id) AS matches FROM Bowling_Performance bp JOIN Players p ON bp.player_id = p.player_id JOIN Matches m ON bp.match_id = m.match_id WHERE m.format IN ('ODI','T20') GROUP BY bp.player_id HAVING matches >= 20 ORDER BY avg_econ ASC LIMIT 50;"),
+        ("Most consistent batsmen (stddev of runs)",
+         "SELECT bp.player_id, p.name, AVG(bp.runs) AS avg_runs, STDDEV_POP(bp.runs) AS sd_runs, COUNT(*) AS matches FROM Batting_Performance bp JOIN Players p ON bp.player_id = p.player_id GROUP BY bp.player_id HAVING matches >= 20 ORDER BY sd_runs ASC LIMIT 50;"),
+        ("Player format-wise analysis (20+ total matches)",
+         "SELECT p.player_id, p.name, m.format, COUNT(DISTINCT bp.match_id) AS matches, SUM(bp.runs) AS runs, SUM(bw.wickets) AS wickets FROM Players p LEFT JOIN Batting_Performance bp ON p.player_id = bp.player_id LEFT JOIN Bowling_Performance bw ON p.player_id = bw.player_id LEFT JOIN Matches m ON (bp.match_id = m.match_id OR bw.match_id = m.match_id) GROUP BY p.player_id, m.format HAVING SUM(COALESCE(bp.runs,0)) + SUM(COALESCE(bw.wickets,0)) IS NOT NULL;"),
+        ("Comprehensive performance ranking system (sample using weighted score)",
+         "SELECT p.player_id, p.name, (COALESCE(p.total_runs,0)*0.6 + COALESCE(p.total_wickets,0)*0.4) AS performance_score FROM Players p ORDER BY performance_score DESC LIMIT 100;"),
+        ("Head-to-head match prediction analysis (historical wins)",
+         "SELECT team1 AS team_a, team2 AS team_b, SUM(CASE WHEN winning_team = team1 THEN 1 ELSE 0 END) AS team1_wins, SUM(CASE WHEN winning_team = team2 THEN 1 ELSE 0 END) AS team2_wins FROM Matches GROUP BY team1, team2;"),
+        ("Recent player form and momentum analysis (last 10 matches)",
+         "SELECT bp.player_id, p.name, SUM(bp.runs) AS runs_last10, SUM(bw.wickets) AS wkts_last10 FROM Batting_Performance bp LEFT JOIN Bowling_Performance bw ON bp.player_id = bw.player_id LEFT JOIN Players p ON p.player_id = bp.player_id WHERE bp.match_id IN (SELECT match_id FROM Matches ORDER BY match_date DESC LIMIT 10) GROUP BY bp.player_id;"),
+        ("Best batting partnerships study (top combined runs)",
+         "SELECT match_id, innings, GROUP_CONCAT(CONCAT(player_id,':',runs) SEPARATOR ';') AS players_runs, SUM(runs) AS combined FROM Batting_Performance GROUP BY match_id, innings ORDER BY combined DESC LIMIT 50;"),
+        ("Time-series performance evolution analysis (player level)",
+         "SELECT YEAR(m.match_date) AS year, p.player_id, p.name, SUM(bp.runs) AS runs FROM Batting_Performance bp JOIN Matches m ON bp.match_id = m.match_id JOIN Players p ON bp.player_id = p.player_id GROUP BY YEAR(m.match_date), p.player_id ORDER BY p.player_id, year;")
+    ]
+}
 
-def show():
-    """Display SQL queries page"""
-    
-    st.title("🔍 SQL Analytics & Practice Queries")
-    st.markdown("Practice 25+ SQL queries from beginner to advanced levels")
-    
-    # Tabs for different difficulty levels
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "📚 Beginner (Q1-Q8)", 
-        "📊 Intermediate (Q9-Q16)", 
-        "🚀 Advanced (Q17-Q25)",
-        "✏️ Custom Query"
-    ])
-    
-    with tab1:
-        display_beginner_queries()
-    
-    with tab2:
-        display_intermediate_queries()
-    
-    with tab3:
-        display_advanced_queries()
-    
-    with tab4:
-        display_custom_query()
+def app():
+    st.header("SQL Queries — Built-in Analytics (25 queries)")
+    st.markdown("Choose a group and query, then execute against the connected DB.")
 
+    group = st.selectbox("Group", ["Beginner", "Intermediate", "Advanced"])
+    queries = QUERIES[group]
 
-def display_beginner_queries():
-    """Display beginner level queries"""
-    
-    st.subheader("📚 Beginner Level Queries (1-8)")
-    st.markdown("Focus on basic SELECT, WHERE, GROUP BY, and ORDER BY operations")
-    
-    queries = {
-        "Q1: Indian Players": {
-            "description": "Find all players who represent India. Display their full name, playing role, batting style, and bowling style.",
-            "query": SQLQueries.query_1_indian_players()
-        },
-        "Q2: Recent Matches": {
-            "description": "Show all cricket matches played in the last few days. Include match description, both team names, venue name with city, and match date.",
-            "query": SQLQueries.query_2_recent_matches()
-        },
-        "Q3: Top ODI Scorers": {
-            "description": "List top 10 highest run scorers in ODI cricket. Show player name, total runs, batting average, and centuries.",
-            "query": SQLQueries.query_3_top_odi_scorers()
-        },
-        "Q4: Large Venues": {
-            "description": "Display all cricket venues with seating capacity > 50,000. Show venue name, city, country, and capacity.",
-            "query": SQLQueries.query_4_large_venues()
-        },
-        "Q5: Team Wins": {
-            "description": "Calculate how many matches each team has won. Show team name and total wins.",
-            "query": SQLQueries.query_5_team_wins()
-        },
-        "Q6: Players by Role": {
-            "description": "Count how many players belong to each playing role (Batsman, Bowler, All-rounder, Wicket-keeper).",
-            "query": SQLQueries.query_6_players_by_role()
-        },
-        "Q7: Highest Scores by Format": {
-            "description": "Find the highest individual batting score in each cricket format (Test, ODI, T20I).",
-            "query": SQLQueries.query_7_highest_scores_by_format()
-        },
-        "Q8: Series in 2024": {
-            "description": "Show all cricket series that started in 2024. Include series name, host country, match type, and dates.",
-            "query": SQLQueries.query_8_series_2024()
-        }
-    }
-    
-    display_query_section(queries)
+    q_label = [q[0] for q in queries]
+    choice = st.selectbox("Query", q_label)
+    idx = q_label.index(choice)
+    sql = queries[idx][1]
 
+    st.subheader("SQL")
+    st.code(sql, language="sql")
 
-def display_intermediate_queries():
-    """Display intermediate level queries"""
-    
-    st.subheader("📊 Intermediate Level Queries (9-16)")
-    st.markdown("Utilize JOINs, subqueries, and aggregate functions")
-    
-    queries = {
-        "Q9: All-rounders Performance": {
-            "description": "Find all-rounders with 1000+ runs AND 50+ wickets. Show player name, total runs, wickets, and format.",
-            "query": SQLQueries.query_9_allrounders()
-        },
-        "Q10: Recent Completed Matches": {
-            "description": "Get details of last 20 completed matches with team names, winner, victory margin, and venue.",
-            "query": SQLQueries.query_10_recent_completed_matches()
-        },
-        "Q11: Format Comparison": {
-            "description": "Compare player performance across different formats. Show runs in Test, ODI, T20I, and overall average.",
-            "query": SQLQueries.query_11_player_format_comparison()
-        },
-        "Q12: Home vs Away Performance": {
-            "description": "Analyze team performance when playing at home versus away. Count wins in both conditions.",
-            "query": SQLQueries.query_12_home_away_performance()
-        },
-        "Q13: Batting Partnerships": {
-            "description": "Identify partnerships where two batsmen scored 100+ combined runs in the same innings.",
-            "query": SQLQueries.query_13_batting_partnerships()
-        },
-        "Q14: Bowling Venue Analysis": {
-            "description": "Examine bowling performance at different venues. Calculate average economy, wickets, and matches.",
-            "query": SQLQueries.query_14_bowling_venue_analysis()
-        },
-        "Q15: Close Match Performers": {
-            "description": "Identify players who perform well in close matches (decided by <50 runs or <5 wickets).",
-            "query": SQLQueries.query_15_close_match_performers()
-        },
-        "Q16: Performance Trends": {
-            "description": "Track batting performance changes over years. Show average runs and strike rate per year since 2020.",
-            "query": SQLQueries.query_16_performance_trends()
-        }
-    }
-    
-    display_query_section(queries)
-
-
-def display_advanced_queries():
-    """Display advanced level queries"""
-    
-    st.subheader("🚀 Advanced Level Queries (17-25)")
-    st.markdown("Implement window functions, CTEs, and complex analytical calculations")
-    
-    queries = {
-        "Q17: Toss Advantage": {
-            "description": "Investigate toss advantage. Calculate win percentage for teams winning toss by their decision.",
-            "query": SQLQueries.query_17_toss_advantage()
-        },
-        "Q18: Economical Bowlers": {
-            "description": "Find most economical bowlers in limited-overs. Calculate economy rate and total wickets.",
-            "query": SQLQueries.query_18_economical_bowlers()
-        },
-        "Q19: Consistent Batsmen": {
-            "description": "Determine most consistent batsmen using standard deviation. Lower deviation = more consistent.",
-            "query": SQLQueries.query_19_consistent_batsmen()
-        },
-        "Q20: Format-wise Experience": {
-            "description": "Analyze player experience across formats. Show match counts and averages in Test, ODI, T20I.",
-            "query": SQLQueries.query_20_format_wise_experience()
-        },
-        "Q21: Performance Ranking": {
-            "description": "Create comprehensive performance ranking combining batting, bowling, and fielding metrics.",
-            "query": SQLQueries.query_21_performance_ranking()
-        },
-        "Q22: Head-to-Head Analysis": {
-            "description": "Build head-to-head analysis between teams. Show wins, margins, and performance patterns.",
-            "query": SQLQueries.query_22_head_to_head()
-        },
-        "Q23: Recent Form": {
-            "description": "Analyze recent player form. Compare last 5 vs last 10 matches and categorize form status.",
-            "query": SQLQueries.query_23_recent_form()
-        },
-        "Q24: Best Partnerships": {
-            "description": "Study successful batting partnerships. Calculate average runs, success rate, and highest partnership.",
-            "query": SQLQueries.query_24_best_partnerships()
-        },
-        "Q25: Career Trajectory": {
-            "description": "Time-series analysis of career evolution. Track quarterly performance and identify career phase.",
-            "query": SQLQueries.query_25_career_trajectory()
-        }
-    }
-    
-    display_query_section(queries)
-
-
-def display_query_section(queries):
-    """
-    Display query section with execution capability
-    
-    Args:
-        queries: Dictionary of queries
-    """
-    
-    for query_name, query_data in queries.items():
-        with st.expander(f"📝 {query_name}", expanded=False):
-            st.markdown(f"**Description:** {query_data['description']}")
-            
-            # Show SQL query
-            st.code(query_data['query'], language='sql')
-            
-            # Execute button
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                if st.button("▶️ Execute", key=f"exec_{query_name}"):
-                    execute_query(query_data['query'], query_name)
-            with col2:
-                if st.button("📋 Copy Query", key=f"copy_{query_name}"):
-                    st.info("Query copied to clipboard! (Use Ctrl+C on the code block)")
-
-
-def display_custom_query():
-    """Display custom query interface"""
-    
-    st.subheader("✏️ Custom SQL Query")
-    st.markdown("Write and execute your own SQL queries")
-    
-    # Query input
-    custom_query = st.text_area(
-        "Enter your SQL query:",
-        height=200,
-        placeholder="SELECT * FROM players LIMIT 10;"
-    )
-    
-    # Execute button
-    col1, col2, col3 = st.columns([1, 1, 3])
-    
-    with col1:
-        if st.button("▶️ Execute Query", type="primary"):
-            if custom_query.strip():
-                execute_query(custom_query, "Custom Query")
-            else:
-                st.warning("Please enter a SQL query.")
-    
-    with col2:
-        if st.button("🗑️ Clear"):
-            st.rerun()
-    
-    # Query tips
-    with st.expander("💡 Query Tips"):
-        st.markdown("""
-        ### Available Tables:
-        - **teams**: team_id, team_name, country, team_type
-        - **venues**: venue_id, venue_name, city, country, capacity
-        - **players**: player_id, player_name, team_id, country, playing_role, batting_style, bowling_style
-        - **series**: series_id, series_name, host_country, match_type, start_date, end_date
-        - **matches**: match_id, series_id, team1_id, team2_id, venue_id, match_date, winner_id, etc.
-        - **batting_stats**: stat_id, player_id, match_id, runs_scored, balls_faced, strike_rate, etc.
-        - **bowling_stats**: stat_id, player_id, match_id, overs_bowled, wickets_taken, economy_rate, etc.
-        - **player_career_stats**: career_stat_id, player_id, match_format, total_runs, batting_average, etc.
-        
-        ### Example Queries:
-        ```sql
-        -- Get all Indian players
-        SELECT * FROM players WHERE country = 'India';
-        
-        -- Count players by role
-        SELECT playing_role, COUNT(*) as count 
-        FROM players 
-        GROUP BY playing_role;
-        
-        -- Top run scorers
-        SELECT player_name, total_runs 
-        FROM player_career_stats pcs
-        JOIN players p ON pcs.player_id = p.player_id
-        ORDER BY total_runs DESC LIMIT 10;
-        ```
-        """)
-
-
-def execute_query(query, query_name):
-    """
-    Execute SQL query and display results
-    
-    Args:
-        query: SQL query string
-        query_name: Name of the query
-    """
-    
-    db = get_db_connection()
-    
-    with st.spinner(f"Executing {query_name}..."):
-        try:
-            results = db.execute_query(query, fetch=True)
-            
-            if results is not None:
-                if len(results) > 0:
-                    df = pd.DataFrame(results)
-                    
-                    # Display results
-                    st.success(f"✅ Query executed successfully! Found {len(results)} rows.")
-                    
-                    # Show data
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                    
-                    # Download button
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download as CSV",
-                        data=csv,
-                        file_name=f"{query_name.replace(' ', '_').lower()}.csv",
-                        mime="text/csv"
-                    )
-                else:
-                    st.info("Query executed successfully but returned no results.")
-            else:
-                st.warning("No data returned. This might be because:")
-                st.markdown("""
-                - The database tables are empty
-                - The query conditions don't match any records
-                - There was an error executing the query
-                
-                **💡 Tip:** Make sure you have populated the database with sample data first using the CRUD Operations page.
-                """)
-        
-        except Exception as e:
-            st.error(f"❌ Error executing query: {e}")
-            st.info("Please check your SQL syntax and try again.")
-
-
-if __name__ == "__main__":
-    show()
+    if st.button("Run Query"):
+        rows = run_query(sql)
+        if rows is None:
+            st.error("Query failed or DB error. Check logs and connection.")
+        elif len(rows) == 0:
+            st.info("No results returned.")
+        else:
+            st.write(f"Returned {len(rows)} rows.")
+            st.dataframe(rows)

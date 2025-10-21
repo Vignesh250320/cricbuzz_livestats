@@ -1,286 +1,122 @@
-"""
-Database Connection Utility
-Centralized MySQL database connection management
-"""
+# utils/db_connection.py
 
-import mysql.connector
-from mysql.connector import Error
 import os
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+from urllib.parse import quote_plus
 from dotenv import load_dotenv
-import streamlit as st
 
-# Load environment variables
-# Look for .env in the project root directory (two levels up from src/utils)
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-env_path = os.path.join(project_root, '.env')
-load_dotenv(env_path)
-
-# Debug: Print environment variables being used
-print(f"Loading environment from: {env_path}")
-print(f"DB_HOST: {os.getenv('DB_HOST')}")
-print(f"DB_USER: {os.getenv('DB_USER')}")
-print(f"DB_NAME: {os.getenv('DB_NAME')}")
-# Don't print password for security
+# Load environment variables from .env file
+load_dotenv()
 
 
-class DatabaseConnection:
-    """Manages MySQL database connections"""
-    
-    def __init__(self):
-        host = os.getenv('DB_HOST', '127.0.0.1')
-        # Convert localhost to 127.0.0.1 for better compatibility
-        self.host = '127.0.0.1' if host == 'localhost' else host
-        self.user = os.getenv('DB_USER', 'root')
-        self.password = os.getenv('DB_PASSWORD', 'vicky@123')
-        self.database = os.getenv('DB_NAME', 'cricbuzz_db')
-        self.connection = None
-    
-    def connect(self):
-        """Establish database connection"""
-        try:
-            self.connection = mysql.connector.connect(
-                host=self.host,
-                user=self.user,
-                password=self.password,
-                database=self.database,
-                connection_timeout=10,
-                autocommit=True
-            )
-            if self.connection.is_connected():
-                return self.connection
-        except Error as e:
-            st.error(f"Database connection error: {e}")
-            st.info("💡 Run test_connection.py to diagnose the issue")
-            return None
-    
-    def close(self):
-        """Close database connection"""
-        if self.connection and self.connection.is_connected():
-            self.connection.close()
-    
-    def execute_query(self, query, params=None, fetch=True):
-        """
-        Execute SQL query
-        
-        Args:
-            query: SQL query string
-            params: Query parameters (optional)
-            fetch: Whether to fetch results (default True)
-        
-        Returns:
-            Query results or None
-        """
-        try:
-            connection = self.connect()
-            if connection:
-                cursor = connection.cursor(dictionary=True)
-                cursor.execute(query, params or ())
-                
-                if fetch:
-                    result = cursor.fetchall()
-                    cursor.close()
-                    self.close()
-                    return result
-                else:
-                    connection.commit()
-                    cursor.close()
-                    self.close()
-                    return True
-        except Error as e:
-            st.error(f"Query execution error: {e}")
-            return None
-    
-    def execute_many(self, query, data):
-        """
-        Execute multiple queries (batch insert/update)
-        
-        Args:
-            query: SQL query string
-            data: List of tuples containing data
-        
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            connection = self.connect()
-            if connection:
-                cursor = connection.cursor()
-                cursor.executemany(query, data)
-                connection.commit()
-                cursor.close()
-                self.close()
-                return True
-        except Error as e:
-            st.error(f"Batch execution error: {e}")
-            return False
-
-
-def get_db_connection():
-    """Helper function to get database connection instance"""
-    return DatabaseConnection()
-
-
-def initialize_database():
-    """Create database and tables if they don't exist"""
+def get_engine():
+    """
+    Create and return a SQLAlchemy engine for MySQL database connection.
+    Automatically encodes special characters in the password.
+    Returns None if connection fails.
+    """
     try:
-        # Connect without database to create it
-        host = os.getenv('DB_HOST', '127.0.0.1')
-        # Convert localhost to 127.0.0.1 for better compatibility
-        if host == 'localhost':
-            host = '127.0.0.1'
-            
-        connection = mysql.connector.connect(
-            host=host,
-            user=os.getenv('DB_USER', 'root'),
-            password=os.getenv('DB_PASSWORD', 'vicky@123'),
-            connection_timeout=10
+        # Load DB credentials from .env
+        user = os.getenv("DB_USER")
+        password = os.getenv("DB_PASSWORD")
+        host = os.getenv("DB_HOST")
+        port = os.getenv("DB_PORT", "3306")
+        db_name = os.getenv("DB_NAME")
+
+        # Safely encode password to handle @, #, etc.
+        password_encoded = quote_plus(password)
+
+        # Build SQLAlchemy connection URL
+        connection_string = (
+            f"mysql+pymysql://{user}:{password_encoded}@{host}:{port}/{db_name}"
         )
-        
-        cursor = connection.cursor()
-        
-        # Create database
-        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {os.getenv('DB_NAME', 'cricbuzz_db')}")
-        cursor.execute(f"USE {os.getenv('DB_NAME', 'cricbuzz_db')}")
-        
-        # Create tables
-        create_tables_queries = [
-            """
-            CREATE TABLE IF NOT EXISTS teams (
-                team_id INT PRIMARY KEY AUTO_INCREMENT,
-                team_name VARCHAR(100) NOT NULL UNIQUE,
-                country VARCHAR(100),
-                team_type VARCHAR(50),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS venues (
-                venue_id INT PRIMARY KEY AUTO_INCREMENT,
-                venue_name VARCHAR(200) NOT NULL,
-                city VARCHAR(100),
-                country VARCHAR(100),
-                capacity INT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS players (
-                player_id INT PRIMARY KEY AUTO_INCREMENT,
-                player_name VARCHAR(100) NOT NULL,
-                team_id INT,
-                country VARCHAR(100),
-                playing_role VARCHAR(50),
-                batting_style VARCHAR(50),
-                bowling_style VARCHAR(50),
-                date_of_birth DATE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (team_id) REFERENCES teams(team_id) ON DELETE SET NULL
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS series (
-                series_id INT PRIMARY KEY AUTO_INCREMENT,
-                series_name VARCHAR(200) NOT NULL,
-                host_country VARCHAR(100),
-                match_type VARCHAR(50),
-                start_date DATE,
-                end_date DATE,
-                total_matches INT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS matches (
-                match_id INT PRIMARY KEY AUTO_INCREMENT,
-                series_id INT,
-                match_description VARCHAR(300),
-                match_format VARCHAR(50),
-                team1_id INT,
-                team2_id INT,
-                venue_id INT,
-                match_date DATE,
-                toss_winner_id INT,
-                toss_decision VARCHAR(20),
-                winner_id INT,
-                victory_margin INT,
-                victory_type VARCHAR(20),
-                match_status VARCHAR(50),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (series_id) REFERENCES series(series_id) ON DELETE SET NULL,
-                FOREIGN KEY (team1_id) REFERENCES teams(team_id) ON DELETE SET NULL,
-                FOREIGN KEY (team2_id) REFERENCES teams(team_id) ON DELETE SET NULL,
-                FOREIGN KEY (venue_id) REFERENCES venues(venue_id) ON DELETE SET NULL,
-                FOREIGN KEY (toss_winner_id) REFERENCES teams(team_id) ON DELETE SET NULL,
-                FOREIGN KEY (winner_id) REFERENCES teams(team_id) ON DELETE SET NULL
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS batting_stats (
-                stat_id INT PRIMARY KEY AUTO_INCREMENT,
-                player_id INT,
-                match_id INT,
-                innings_number INT,
-                runs_scored INT,
-                balls_faced INT,
-                fours INT,
-                sixes INT,
-                strike_rate DECIMAL(5,2),
-                is_out BOOLEAN,
-                dismissal_type VARCHAR(50),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (player_id) REFERENCES players(player_id) ON DELETE CASCADE,
-                FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS bowling_stats (
-                stat_id INT PRIMARY KEY AUTO_INCREMENT,
-                player_id INT,
-                match_id INT,
-                innings_number INT,
-                overs_bowled DECIMAL(4,1),
-                runs_conceded INT,
-                wickets_taken INT,
-                maidens INT,
-                economy_rate DECIMAL(4,2),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (player_id) REFERENCES players(player_id) ON DELETE CASCADE,
-                FOREIGN KEY (match_id) REFERENCES matches(match_id) ON DELETE CASCADE
-            )
-            """,
-            """
-            CREATE TABLE IF NOT EXISTS player_career_stats (
-                career_stat_id INT PRIMARY KEY AUTO_INCREMENT,
-                player_id INT,
-                match_format VARCHAR(50),
-                total_matches INT DEFAULT 0,
-                total_innings INT DEFAULT 0,
-                total_runs INT DEFAULT 0,
-                batting_average DECIMAL(6,2),
-                highest_score INT,
-                centuries INT DEFAULT 0,
-                half_centuries INT DEFAULT 0,
-                total_wickets INT DEFAULT 0,
-                bowling_average DECIMAL(6,2),
-                best_bowling VARCHAR(20),
-                catches INT DEFAULT 0,
-                stumpings INT DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                FOREIGN KEY (player_id) REFERENCES players(player_id) ON DELETE CASCADE,
-                UNIQUE KEY unique_player_format (player_id, match_format)
-            )
-            """
-        ]
-        
-        for query in create_tables_queries:
-            cursor.execute(query)
-        
-        connection.commit()
-        cursor.close()
-        connection.close()
-        
-        return True
-    except Error as e:
-        st.error(f"Database initialization error: {e}")
+
+        # Create engine
+        engine = create_engine(connection_string, echo=False, pool_pre_ping=True)
+
+        # Test the connection
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            print("✅ Database connected successfully!")
+
+        return engine
+
+    except SQLAlchemyError as e:
+        print(f"❌ Database connection error: {e}")
+        return None
+    except Exception as e:
+        print(f"⚠️ Unexpected error: {e}")
+        return None
+
+
+def get_connection():
+    """
+    Return an active connection object.
+    You can use this in CRUD operations or SQL analytics pages.
+    Example:
+        conn = get_connection()
+        result = conn.execute(text("SELECT * FROM Players"))
+    """
+    engine = get_engine()
+    if engine:
+        return engine.connect()
+    return None
+
+
+def close_connection(conn):
+    """Safely close an open SQLAlchemy connection"""
+    try:
+        if conn:
+            conn.close()
+            print("🔒 Connection closed.")
+    except Exception as e:
+        print(f"⚠️ Error closing connection: {e}")
+
+
+def run_query(query, params=None):
+    """
+    Execute a SQL SELECT query safely and return results as a list of rows.
+    - query: SQL string (use named parameters like :team)
+    - params: dictionary of parameters, e.g. {"team": "India"}
+
+    Returns:
+        List of rows, or [] if error occurs.
+    """
+    conn = get_connection()
+    if not conn:
+        print("⚠️ Could not establish database connection.")
+        return []
+
+    try:
+        result = conn.execute(text(query), params or {})
+        rows = result.fetchall()
+        return rows
+    except SQLAlchemyError as e:
+        print(f"❌ SQL Error: {e}")
+        return []
+    finally:
+        close_connection(conn)
+
+
+def execute_statement(query, params=None):
+    """
+    Execute an INSERT, UPDATE, or DELETE SQL statement.
+    Commits changes automatically and closes the connection.
+    Returns True if successful, False otherwise.
+    """
+    conn = get_connection()
+    if not conn:
+        print("⚠️ Could not establish database connection.")
         return False
+
+    try:
+        conn.execute(text(query), params or {})
+        conn.commit()  # commit changes
+        print("✅ Statement executed successfully.")
+        return True
+    except SQLAlchemyError as e:
+        print(f"❌ SQL Execution Error: {e}")
+        return False
+    finally:
+        close_connection(conn)
