@@ -23,10 +23,18 @@ It’s designed for both **cricket enthusiasts** and **data learners** who want 
 - Filter by format (Test, ODI, T20) and stat type  
 - Interactive charts and visual representation  
 
+### 📥 Data Ingestion Page
+- Fetch and populate data from Cricbuzz API into your database
+- Preview data before inserting
+- Automatically handles Teams, Venues, Series, and Matches
+- One-click data population for testing
+
 ### 🧠 SQL Queries & Analytics Page
 - Contains **25 SQL analytical queries** (Beginner → Advanced)  
+- All queries optimized for MySQL ONLY_FULL_GROUP_BY mode
 - Executes queries directly on the MySQL cricket database  
-- Interactive UI for exploring insights with downloadable results  
+- Interactive UI for exploring insights with downloadable results
+- Includes partnership analysis and advanced statistics
 
 ### 🛠️ CRUD Operations Page
 - Perform **Create, Read, Update, Delete** on database tables  
@@ -46,6 +54,7 @@ cricbuzz_livestats/
 │   ├── home.py                 # Overview/dashboard
 │   ├── live_matches.py         # Live, recent, upcoming matches (API)
 │   ├── top_stats.py            # ICC rankings, most runs/wickets (API)
+│   ├── data_ingestion.py       # Fetch & populate data from API
 │   ├── sql_queries.py          # 25 SQL analytical queries
 │   └── crud_operations.py      # CRUD operations for players/teams
 │
@@ -53,6 +62,13 @@ cricbuzz_livestats/
 │   ├── api_handler.py          # Cricbuzz API functions (30+ endpoints)
 │   ├── db_connection.py        # Central DB connection handler
 │   └── query_executor.py       # SQL query execution utilities
+│
+├── database/
+│   ├── schema.sql              # Complete database schema
+│   ├── insert_sample_data.py   # Sample cricket data
+│   ├── add_partnership_data.py # Partnership batting data
+│   ├── setup_database.py       # Automated setup script
+│   └── DATABASE.md             # Database documentation
 │
 └── notebooks/
     └── data_fetching.ipynb     # API testing + DB population notebook
@@ -64,70 +80,142 @@ cricbuzz_livestats/
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/your-username/cricbuzz_livestats.git
+git clone https://github.com/Vignesh250320/cricbuzz_livestats.git
 cd cricbuzz_livestats
+```
 
-2️⃣ Install Requirements
+### 2️⃣ Install Requirements
+```bash
 pip install -r requirements.txt
+```
 
-3️⃣ Set Up MySQL Database
-Run the following in your MySQL terminal:
-CREATE DATABASE cricbuzz_db;
-USE cricbuzz_db;
--- Run your SQL table creation and sample data script here
+### 3️⃣ Set Up MySQL Database
+```bash
+# Login to MySQL
+mysql -u root -p
 
-4️⃣ Configure Environment Variables
-Create a file named .env in the project root:
+# Create database and user
+CREATE DATABASE cricbuzz_livestats;
+CREATE USER 'cb_user'@'localhost' IDENTIFIED BY 'your_password';
+GRANT ALL PRIVILEGES ON cricbuzz_livestats.* TO 'cb_user'@'localhost';
+FLUSH PRIVILEGES;
+USE cricbuzz_livestats;
+
+# Run schema
+SOURCE database/schema.sql;
+```
+
+### 4️⃣ Configure Environment Variables
+Create a file named `.env` in the project root:
+```env
 RAPIDAPI_KEY=your_rapidapi_key_here
+RAPIDAPI_HOST=cricbuzz-cricket.p.rapidapi.com
 DB_HOST=localhost
-DB_USER=root
-DB_PASSWORD=yourpassword
-DB_NAME=cricbuzz_db
+DB_USER=cb_user
+DB_PASSWORD=your_password
+DB_NAME=cricbuzz_livestats
+```
 
-5️⃣ Run the Application
+### 5️⃣ Populate Sample Data (Optional)
+```bash
+python database/insert_sample_data.py
+python database/add_partnership_data.py
+```
+
+### 6️⃣ Run the Application
+```bash
 streamlit run app.py
+```
+Visit `http://localhost:8501` in your browser
 
 
-🧠 SQL Practice Queries
-This project includes 25 SQL practice problems in pages/sql_queries.py
+---
 
+## 🧠 SQL Practice Queries
 
-Beginner: 1–8
+This project includes **25 SQL practice problems** in `pages/sql_queries.py`:
 
+### Query Difficulty Levels:
+- **Beginner (1–8)**: Basic SELECT, WHERE, ORDER BY
+- **Intermediate (9–16)**: JOINs, GROUP BY, Aggregations, CTEs
+- **Advanced (17–25)**: Complex analytics, partnerships, statistics
 
-Intermediate: 9–16
+### Highlights:
+- ✅ All queries optimized for MySQL `ONLY_FULL_GROUP_BY` mode
+- ✅ Partnership analysis (queries 13, 24)
+- ✅ Performance metrics and trends
+- ✅ Interactive execution with downloadable results
 
-
-Advanced: 17–25
 Each query runs interactively within Streamlit and displays results instantly.
 
+---
 
+## 🛠️ Technologies Used
 
-🛠️ Technologies Used
-CategoryToolsFrontendStreamlitBackendPythonDatabaseMySQLAPI SourceCricbuzz (via RapidAPI)Librariespandas, requests, mysql-connector-python, plotly
+| Category | Tools |
+|----------|-------|
+| **Frontend** | Streamlit |
+| **Backend** | Python 3.13 |
+| **Database** | MySQL 8.x |
+| **API Source** | Cricbuzz (via RapidAPI) |
+| **Libraries** | pandas, requests, mysql-connector-python, python-dotenv |
 
-📦 Deliverables
+---
 
+## 📦 Deliverables
 
-✅ Streamlit web app (app.py)
+- ✅ Streamlit web app with 6 pages
+- ✅ Complete MySQL schema with views, triggers, and stored procedures
+- ✅ 25+ SQL analytical queries (all working, no errors)
+- ✅ Data ingestion system from Cricbuzz API
+- ✅ CRUD functionality for database operations
+- ✅ Live matches and top stats pages
+- ✅ Comprehensive documentation
 
+---
 
-✅ MySQL schema & data
+## 📸 Screenshots
 
+### SQL Analytics Page
+Run 25 practice queries with instant results and CSV download.
 
-✅ .env config for secure API keys
+### Data Ingestion Page
+Fetch and populate data from Cricbuzz API with one click.
 
+### Live Matches Page
+Real-time cricket match data from Cricbuzz.
 
-✅ 25+ SQL query scripts
+---
 
+## 🤝 Contributing
 
-✅ CRUD functionality
+Contributions are welcome! Please feel free to submit a Pull Request.
 
+---
 
-✅ Live & top stats pages
+## 📄 License
 
+This project is open source and available under the [MIT License](LICENSE).
 
-✅ Documentation and setup guide
+---
+
+## 👤 Author
+
+**Vignesh**
+- GitHub: [@Vignesh250320](https://github.com/Vignesh250320)
+- Project: [cricbuzz_livestats](https://github.com/Vignesh250320/cricbuzz_livestats)
+
+---
+
+## 🙏 Acknowledgments
+
+- **Cricbuzz** for providing cricket data via RapidAPI
+- **Streamlit** for the amazing web framework
+- **MySQL** for robust database management
+
+---
+
+Made with ❤️ for Cricket Enthusiasts and Data Analysts 🏏
 
 
 
