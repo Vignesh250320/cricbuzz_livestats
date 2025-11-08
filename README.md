@@ -64,15 +64,25 @@ cricbuzz_livestats/
 │   └── query_executor.py       # SQL query execution utilities
 │
 ├── database/
+│   ├── setup_complete.py       # ⭐ ONE-COMMAND setup script
 │   ├── schema.sql              # Complete database schema
 │   ├── insert_sample_data.py   # Sample cricket data
 │   ├── add_partnership_data.py # Partnership batting data
-│   ├── setup_database.py       # Automated setup script
 │   └── DATABASE.md             # Database documentation
 │
 └── notebooks/
     └── data_fetching.ipynb     # API testing + DB population notebook
 ```
+
+### Database Files
+
+| File | Purpose | When to Use |
+|------|---------|-------------|
+| `setup_complete.py` | ⭐ **Use this!** Sets up everything in one command | First time setup |
+| `schema.sql` | Database schema (tables, views, triggers) | Manual setup or reference |
+| `insert_sample_data.py` | Sample cricket data | Add more test data |
+| `add_partnership_data.py` | Partnership batting records | Add partnership data |
+| `DATABASE.md` | Complete schema documentation | Reference and learning |
 
 ---
 
@@ -90,19 +100,41 @@ pip install -r requirements.txt
 ```
 
 ### 3️⃣ Set Up MySQL Database
+
+#### Quick Setup (Recommended) ⭐
+Run this **ONE command** to set up everything:
 ```bash
-# Login to MySQL
+python database/setup_complete.py
+```
+
+This will automatically:
+- ✅ Create all tables, views, triggers, and procedures
+- ✅ Insert sample data (teams, players, venues, matches)
+- ✅ Add batting and bowling performance data
+- ✅ Create partnerships for testing
+
+#### Manual Setup (Advanced)
+If you prefer step-by-step control:
+
+```bash
+# 1. Login to MySQL
 mysql -u root -p
 
-# Create database and user
+# 2. Create database and user
 CREATE DATABASE cricbuzz_livestats;
 CREATE USER 'cb_user'@'localhost' IDENTIFIED BY 'your_password';
 GRANT ALL PRIVILEGES ON cricbuzz_livestats.* TO 'cb_user'@'localhost';
 FLUSH PRIVILEGES;
 USE cricbuzz_livestats;
 
-# Run schema
+# 3. Run schema
 SOURCE database/schema.sql;
+```
+
+Then manually run the data scripts:
+```bash
+python database/insert_sample_data.py
+python database/add_partnership_data.py
 ```
 
 ### 4️⃣ Configure Environment Variables
@@ -116,17 +148,33 @@ DB_PASSWORD=your_password
 DB_NAME=cricbuzz_livestats
 ```
 
-### 5️⃣ Populate Sample Data (Optional)
-```bash
-python database/insert_sample_data.py
-python database/add_partnership_data.py
-```
-
-### 6️⃣ Run the Application
+### 5️⃣ Run the Application
 ```bash
 streamlit run app.py
 ```
 Visit `http://localhost:8501` in your browser
+
+---
+
+## 🔄 Adding More Data
+
+The setup script includes sample data, but you can add real cricket data:
+
+**Option 1: Use Data Ingestion Page** (Recommended)
+1. Open the app: `http://localhost:8501`
+2. Go to **📥 Data Ingestion** page
+3. Select data source (Matches, Players, etc.)
+4. Click **Fetch Data** to preview
+5. Click **Insert into Database**
+
+**Option 2: Manual Scripts**
+```bash
+# Add more sample data
+python database/insert_sample_data.py
+
+# Add partnership data
+python database/add_partnership_data.py
+```
 
 
 ---
