@@ -66,6 +66,11 @@ test_*.py
 verify_*.py
 *_GUIDE.md
 
+# Redundant database files (use setup_complete.py instead)
+database/create_tables.sql
+database/sample_data.sql
+database/setup_database.py
+
 # OS
 Thumbs.db
 .DS_Store
