@@ -1,92 +1,63 @@
-# pages/sql_queries.py
 import streamlit as st
-from utils.db_connection import run_query
-from utils.api_handler import load_players_into_db
+import pandas as pd
+from utils.query_executor import run_sql_query
 
-# 25 SQL queries grouped
-QUERIES = {
-    "Beginner": [
-        ("Find all players from India with roles and styles",
-         "SELECT player_id, name, playing_role, batting_style, bowling_style FROM Players WHERE country = 'India';"),
-        ("Show matches played in last 7 days (sorted by date)",
-         "SELECT * FROM Matches WHERE match_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY match_date DESC;"),
-        ("Top 10 ODI run scorers with averages and centuries",
-         "SELECT player_id, name, total_runs, batting_average FROM Players WHERE batting_average IS NOT NULL ORDER BY total_runs DESC LIMIT 10;"),
-        ("Venues with capacity > 30000",
-         "SELECT * FROM Venues WHERE capacity > 30000;"),
-        ("Matches won by each team",
-         "SELECT winning_team, COUNT(*) AS wins FROM Matches WHERE winning_team IS NOT NULL GROUP BY winning_team ORDER BY wins DESC;"),
-        ("Count players by playing role",
-         "SELECT playing_role, COUNT(*) AS count FROM Players GROUP BY playing_role;"),
-        ("Highest batting score in each format",
-         # Assuming Batting_Performance includes format in Matches.format join
-         "SELECT m.format, bp.player_id, p.name, MAX(bp.runs) AS highest_score FROM Batting_Performance bp JOIN Matches m ON bp.match_id = m.match_id JOIN Players p ON bp.player_id = p.player_id GROUP BY m.format, bp.player_id, p.name ORDER BY m.format, highest_score DESC;"),
-        ("Series started in 2024 (matches grouped by series/description)",
-         "SELECT DISTINCT description, MIN(match_date) AS series_start FROM Matches WHERE YEAR(match_date) = 2024 GROUP BY description;")
-    ],
-    "Intermediate": [
-        ("All-rounders with 1000+ runs AND 50+ wickets",
-         "SELECT player_id, name, total_runs, total_wickets FROM Players WHERE total_runs >= 1000 AND total_wickets >= 50;"),
-        ("Last 20 completed matches with details",
-         "SELECT * FROM Matches WHERE winning_team IS NOT NULL ORDER BY match_date DESC LIMIT 20;"),
-        ("Player performance comparison across formats (sample)",
-         "SELECT p.player_id, p.name, m.format, SUM(bp.runs) AS runs, SUM(bw.wickets) AS wickets FROM Players p LEFT JOIN Batting_Performance bp ON p.player_id = bp.player_id LEFT JOIN Bowling_Performance bw ON p.player_id = bw.player_id LEFT JOIN Matches m ON bp.match_id = m.match_id OR bw.match_id = m.match_id GROUP BY p.player_id, m.format ORDER BY p.player_id;"),
-        ("Team performance: home vs away",
-         # Assumes Matches has venue/city info and Teams table
-         "SELECT m.team1 AS team, SUM(CASE WHEN m.winning_team = m.team1 THEN 1 ELSE 0 END) AS home_wins FROM Matches m GROUP BY m.team1;"),
-        ("Batting partnerships with 100+ combined runs",
-         # Requires partnership table - best-effort: look for two-player same-innings combined runs
-         "SELECT match_id, innings, SUM(runs) AS partnership_runs FROM Batting_Performance GROUP BY match_id, innings HAVING SUM(runs) >= 100;"),
-        ("Bowling performance at venues (3+ matches)",
-         "SELECT b.player_id, p.name, v.venue_id, v.name AS venue_name, AVG(b.economy_rate) AS avg_econ, COUNT(DISTINCT b.match_id) AS matches FROM Bowling_Performance b JOIN Players p ON b.player_id = p.player_id JOIN Matches m ON b.match_id = m.match_id JOIN Venues v ON m.venue_id = v.venue_id GROUP BY b.player_id, v.venue_id HAVING matches >= 3 ORDER BY avg_econ ASC;"),
-        ("Player performance in close matches (margin < 10 runs/wickets)",
-         "SELECT p.player_id, p.name, bp.match_id, bp.runs FROM Players p JOIN Batting_Performance bp ON p.player_id = bp.player_id JOIN Matches m ON bp.match_id = m.match_id WHERE (m.victory_margin IS NOT NULL AND CAST(m.victory_margin AS SIGNED) < 10) ORDER BY m.match_date DESC;"),
-        ("Batting trends year-over-year (since 2020)",
-         "SELECT YEAR(m.match_date) AS year, p.player_id, p.name, SUM(bp.runs) AS runs FROM Batting_Performance bp JOIN Matches m ON bp.match_id = m.match_id JOIN Players p ON bp.player_id = p.player_id WHERE YEAR(m.match_date) >= 2020 GROUP BY YEAR(m.match_date), p.player_id ORDER BY year, runs DESC;")
-    ],
-    "Advanced": [
-        ("Toss advantage analysis (who wins more after winning toss)",
-         "SELECT toss_winner, toss_decision, SUM(CASE WHEN winning_team = toss_winner THEN 1 ELSE 0 END) AS wins_after_toss, COUNT(*) AS matches FROM Matches GROUP BY toss_winner, toss_decision ORDER BY wins_after_toss DESC;"),
-        ("Most economical bowlers in limited-overs (min 20 matches)",
-         "SELECT bp.player_id, p.name, AVG(bp.economy_rate) AS avg_econ, COUNT(DISTINCT bp.match_id) AS matches FROM Bowling_Performance bp JOIN Players p ON bp.player_id = p.player_id JOIN Matches m ON bp.match_id = m.match_id WHERE m.format IN ('ODI','T20') GROUP BY bp.player_id HAVING matches >= 20 ORDER BY avg_econ ASC LIMIT 50;"),
-        ("Most consistent batsmen (stddev of runs)",
-         "SELECT bp.player_id, p.name, AVG(bp.runs) AS avg_runs, STDDEV_POP(bp.runs) AS sd_runs, COUNT(*) AS matches FROM Batting_Performance bp JOIN Players p ON bp.player_id = p.player_id GROUP BY bp.player_id HAVING matches >= 20 ORDER BY sd_runs ASC LIMIT 50;"),
-        ("Player format-wise analysis (20+ total matches)",
-         "SELECT p.player_id, p.name, m.format, COUNT(DISTINCT bp.match_id) AS matches, SUM(bp.runs) AS runs, SUM(bw.wickets) AS wickets FROM Players p LEFT JOIN Batting_Performance bp ON p.player_id = bp.player_id LEFT JOIN Bowling_Performance bw ON p.player_id = bw.player_id LEFT JOIN Matches m ON (bp.match_id = m.match_id OR bw.match_id = m.match_id) GROUP BY p.player_id, m.format HAVING SUM(COALESCE(bp.runs,0)) + SUM(COALESCE(bw.wickets,0)) IS NOT NULL;"),
-        ("Comprehensive performance ranking system (sample using weighted score)",
-         "SELECT p.player_id, p.name, (COALESCE(p.total_runs,0)*0.6 + COALESCE(p.total_wickets,0)*0.4) AS performance_score FROM Players p ORDER BY performance_score DESC LIMIT 100;"),
-        ("Head-to-head match prediction analysis (historical wins)",
-         "SELECT team1 AS team_a, team2 AS team_b, SUM(CASE WHEN winning_team = team1 THEN 1 ELSE 0 END) AS team1_wins, SUM(CASE WHEN winning_team = team2 THEN 1 ELSE 0 END) AS team2_wins FROM Matches GROUP BY team1, team2;"),
-        ("Recent player form and momentum analysis (last 10 matches)",
-         "SELECT bp.player_id, p.name, SUM(bp.runs) AS runs_last10, SUM(bw.wickets) AS wkts_last10 FROM Batting_Performance bp LEFT JOIN Bowling_Performance bw ON bp.player_id = bw.player_id LEFT JOIN Players p ON p.player_id = bp.player_id WHERE bp.match_id IN (SELECT match_id FROM Matches ORDER BY match_date DESC LIMIT 10) GROUP BY bp.player_id;"),
-        ("Best batting partnerships study (top combined runs)",
-         "SELECT match_id, innings, GROUP_CONCAT(CONCAT(player_id,':',runs) SEPARATOR ';') AS players_runs, SUM(runs) AS combined FROM Batting_Performance GROUP BY match_id, innings ORDER BY combined DESC LIMIT 50;"),
-        ("Time-series performance evolution analysis (player level)",
-         "SELECT YEAR(m.match_date) AS year, p.player_id, p.name, SUM(bp.runs) AS runs FROM Batting_Performance bp JOIN Matches m ON bp.match_id = m.match_id JOIN Players p ON bp.player_id = p.player_id GROUP BY YEAR(m.match_date), p.player_id ORDER BY p.player_id, year;")
-    ]
-}
+st.set_page_config(page_title="🧮 SQL Analytics", layout="wide")
+st.title("🧮 SQL Practice Queries (25)")
 
-def app():
-    st.header("SQL Queries — Built-in Analytics (25 queries)")
-    st.markdown("Choose a group and query, then execute against the connected DB.")
+st.markdown("Explore cricket analytics through 25 real SQL queries powered by your MySQL database.")
+st.info("💡 Make sure your database has loaded player and match data before running queries.")
 
-    group = st.selectbox("Group", ["Beginner", "Intermediate", "Advanced"])
-    queries = QUERIES[group]
+# =====================================================
+# 25 Practice Queries (Structured by Difficulty)
+# =====================================================
 
-    q_label = [q[0] for q in queries]
-    choice = st.selectbox("Query", q_label)
-    idx = q_label.index(choice)
-    sql = queries[idx][1]
+@st.cache_data(ttl=300)
+def get_queries():
+    return {
+        # Beginner Level
+        "1️⃣ Players from India": """SELECT full_name, playing_role, batting_style, bowling_style FROM Players WHERE country='India';""",
+        "2️⃣ Recent Matches": """SELECT match_description, match_date, match_format, victory_type FROM Matches ORDER BY match_date DESC LIMIT 10;""",
+        "3️⃣ Top 10 Run Scorers": """SELECT full_name, total_runs, batting_average FROM Players ORDER BY total_runs DESC LIMIT 10;""",
+        "4️⃣ Venues with Capacity > 30,000": """SELECT venue_name, city, country, capacity FROM Venues WHERE capacity > 30000 ORDER BY capacity DESC;""",
+        "5️⃣ Wins per Team": """SELECT team_name, total_wins FROM Teams ORDER BY total_wins DESC;""",
+        "6️⃣ Player Count by Role": """SELECT playing_role, COUNT(*) AS Player_Count FROM Players GROUP BY playing_role;""",
+        "7️⃣ Highest Score by Format": """SELECT match_format, MAX(bp.runs) AS Highest_Score FROM Batting_Performance bp JOIN Matches m ON bp.match_id=m.match_id GROUP BY match_format;""",
+        "8️⃣ Series Started in 2024": """SELECT series_name, host_country, match_type, start_date FROM Series WHERE YEAR(start_date)=2024;""",
 
-    st.subheader("SQL")
-    st.code(sql, language="sql")
+        # Intermediate Level
+        "9️⃣ All-rounders with 1000+ Runs & 50+ Wickets": """SELECT full_name, total_runs, total_wickets FROM Players WHERE total_runs>1000 AND total_wickets>50;""",
+        "🔟 Last 20 Completed Matches": """SELECT match_description, match_date, victory_type, victory_margin FROM Matches WHERE match_status='Completed' ORDER BY match_date DESC LIMIT 20;""",
+        "11️⃣ Player Format Comparison": """SELECT p.full_name, SUM(CASE WHEN m.match_format='Test' THEN bp.runs ELSE 0 END) AS Test_Runs, SUM(CASE WHEN m.match_format='ODI' THEN bp.runs ELSE 0 END) AS ODI_Runs, SUM(CASE WHEN m.match_format='T20I' THEN bp.runs ELSE 0 END) AS T20_Runs FROM Batting_Performance bp JOIN Matches m ON bp.match_id=m.match_id JOIN Players p ON bp.player_id=p.player_id GROUP BY p.player_id, p.full_name HAVING COUNT(DISTINCT m.match_format)>=1;""",
+        "12️⃣ Home vs Away Team Wins": """SELECT t.team_name, SUM(CASE WHEN v.country=t.country THEN 1 ELSE 0 END) AS Home_Wins, SUM(CASE WHEN v.country!=t.country THEN 1 ELSE 0 END) AS Away_Wins FROM Matches m JOIN Venues v ON m.venue_id=v.venue_id JOIN Teams t ON m.winning_team_id=t.team_id GROUP BY t.team_id, t.team_name;""",
+        "13️⃣ 100+ Run Partnerships": """SELECT bp1.innings_id, p1.full_name AS Batsman1, p2.full_name AS Batsman2, (bp1.runs + bp2.runs) AS Partnership_Runs FROM Batting_Performance bp1 JOIN Batting_Performance bp2 ON bp1.innings_id=bp2.innings_id AND bp1.batting_position + 1 = bp2.batting_position JOIN Players p1 ON bp1.player_id=p1.player_id JOIN Players p2 ON bp2.player_id=p2.player_id WHERE (bp1.runs + bp2.runs)>=100 ORDER BY Partnership_Runs DESC;""",
+        "14️⃣ Bowling Performance by Venue": """SELECT p.full_name, v.venue_name, AVG(bp.economy_rate) AS Avg_Economy, SUM(bp.wickets) AS Total_Wickets FROM Bowling_Performance bp JOIN Matches m ON bp.match_id=m.match_id JOIN Venues v ON m.venue_id=v.venue_id JOIN Players p ON bp.player_id=p.player_id GROUP BY p.player_id, p.full_name, v.venue_id, v.venue_name HAVING COUNT(DISTINCT m.match_id)>=1;""",
+        "15️⃣ Player Performance in Close Matches": """SELECT p.full_name, AVG(bp.runs) AS Avg_Runs, COUNT(DISTINCT m.match_id) AS Close_Matches FROM Batting_Performance bp JOIN Matches m ON bp.match_id=m.match_id JOIN Players p ON bp.player_id=p.player_id WHERE (m.victory_type='runs' AND CAST(SUBSTRING_INDEX(m.victory_margin,' ',1) AS UNSIGNED)<50) OR (m.victory_type='wickets' AND CAST(SUBSTRING_INDEX(m.victory_margin,' ',1) AS UNSIGNED)<5) GROUP BY p.player_id, p.full_name HAVING Close_Matches>=1 ORDER BY Avg_Runs DESC;""",
+        "16️⃣ Yearly Player Averages (Since 2020)": """SELECT p.full_name, YEAR(m.match_date) AS Year, AVG(bp.runs) AS Avg_Runs, AVG(bp.strike_rate) AS Avg_SR FROM Batting_Performance bp JOIN Matches m ON bp.match_id=m.match_id JOIN Players p ON bp.player_id=p.player_id WHERE YEAR(m.match_date)>=2020 GROUP BY p.player_id, p.full_name, YEAR(m.match_date);""",
 
-    if st.button("Run Query"):
-        rows = run_query(sql)
-        if rows is None:
-            st.error("Query failed or DB error. Check logs and connection.")
-        elif len(rows) == 0:
-            st.info("No results returned.")
+        # Advanced Level
+        "17️⃣ Toss Advantage Analysis": """SELECT toss_decision, COUNT(*) AS Total_Tosses, SUM(CASE WHEN toss_winner_id=winning_team_id THEN 1 ELSE 0 END) AS Toss_Winners_Won, ROUND(SUM(CASE WHEN toss_winner_id=winning_team_id THEN 1 ELSE 0 END)*100/COUNT(*),2) AS Win_Percentage FROM Matches GROUP BY toss_decision;""",
+        "18️⃣ Most Economical Bowlers": """SELECT p.full_name, AVG(bp.economy_rate) AS Avg_Economy, SUM(bp.wickets) AS Total_Wickets FROM Bowling_Performance bp JOIN Players p ON bp.player_id=p.player_id JOIN Matches m ON bp.match_id=m.match_id WHERE m.match_format IN ('ODI','T20I') GROUP BY p.player_id, p.full_name HAVING COUNT(DISTINCT bp.match_id)>=1 ORDER BY Avg_Economy ASC LIMIT 15;""",
+        "19️⃣ Consistent Batsmen (Low Std Dev)": """SELECT p.full_name, COUNT(bp.match_id) AS Innings, AVG(bp.runs) AS Avg_Runs, ROUND(STDDEV(bp.runs),2) AS StdDev_Runs, ROUND(STDDEV(bp.runs)/AVG(bp.runs),3) AS Consistency_Index FROM Batting_Performance bp JOIN Players p ON bp.player_id=p.player_id JOIN Matches m ON bp.match_id=m.match_id WHERE bp.balls_faced>=10 AND YEAR(m.match_date)>=2020 GROUP BY p.player_id, p.full_name HAVING COUNT(bp.match_id)>=2 ORDER BY Consistency_Index ASC;""",
+        "20️⃣ Matches Played by Format": """SELECT p.full_name, SUM(CASE WHEN m.match_format='Test' THEN 1 ELSE 0 END) AS Test_Matches, SUM(CASE WHEN m.match_format='ODI' THEN 1 ELSE 0 END) AS ODI_Matches, SUM(CASE WHEN m.match_format='T20I' THEN 1 ELSE 0 END) AS T20_Matches FROM Batting_Performance bp JOIN Matches m ON bp.match_id=m.match_id JOIN Players p ON bp.player_id=p.player_id GROUP BY p.player_id, p.full_name HAVING (Test_Matches+ODI_Matches+T20_Matches)>=1;""",
+        "21️⃣ Player Performance Ranking": """SELECT full_name, ROUND((COALESCE(total_runs,0)*0.01 + COALESCE(batting_average,0)*0.5 + COALESCE(strike_rate,0)*0.3 + COALESCE(total_wickets,0)*2 + (50-COALESCE(bowling_average,0))*0.5 + ((6-COALESCE(economy_rate,0))*2)),2) AS Performance_Score FROM Players ORDER BY Performance_Score DESC LIMIT 10;""",
+        "22️⃣ Head-to-Head Team Stats": """SELECT t1.team_name AS Team1, t2.team_name AS Team2, COUNT(*) AS Total_Matches, SUM(CASE WHEN m.winning_team_id=t1.team_id THEN 1 ELSE 0 END) AS Team1_Wins, SUM(CASE WHEN m.winning_team_id=t2.team_id THEN 1 ELSE 0 END) AS Team2_Wins FROM Matches m JOIN Teams t1 ON m.team1_id=t1.team_id JOIN Teams t2 ON m.team2_id=t2.team_id GROUP BY t1.team_id, t1.team_name, t2.team_id, t2.team_name HAVING Total_Matches>=1;""",
+        "23️⃣ Recent Player Form": """SELECT p.full_name, AVG(CASE WHEN m.match_date>=DATE_SUB(CURDATE(),INTERVAL 30 DAY) THEN bp.runs END) AS LastMonthAvg, AVG(bp.runs) AS OverallAvg FROM Batting_Performance bp JOIN Players p ON bp.player_id=p.player_id JOIN Matches m ON bp.match_id=m.match_id GROUP BY p.player_id, p.full_name;""",
+        "24️⃣ Successful Batting Partnerships": """SELECT p1.full_name AS Player1, p2.full_name AS Player2, ROUND(AVG(bp1.runs+bp2.runs),2) AS Avg_Partnership, COUNT(*) AS Partnerships FROM Batting_Performance bp1 JOIN Batting_Performance bp2 ON bp1.innings_id=bp2.innings_id AND bp1.batting_position + 1 = bp2.batting_position JOIN Players p1 ON bp1.player_id=p1.player_id JOIN Players p2 ON bp2.player_id=p2.player_id GROUP BY p1.player_id, p1.full_name, p2.player_id, p2.full_name HAVING Partnerships>=1 ORDER BY Avg_Partnership DESC;""",
+        "25️⃣ Quarterly Player Performance": """SELECT p.full_name, YEAR(m.match_date) AS Year, QUARTER(m.match_date) AS Quarter, ROUND(AVG(bp.runs),2) AS Avg_Runs, ROUND(AVG(bp.strike_rate),2) AS Avg_SR FROM Batting_Performance bp JOIN Matches m ON bp.match_id=m.match_id JOIN Players p ON bp.player_id=p.player_id GROUP BY p.player_id, p.full_name, YEAR(m.match_date), QUARTER(m.match_date) HAVING COUNT(bp.match_id)>=1;"""
+    }
+
+queries = get_queries()
+selected = st.selectbox("Choose a Query", list(queries.keys()))
+st.code(queries[selected], language="sql")
+
+if st.button("▶️ Run Query"):
+    with st.spinner("Executing SQL query..."):
+        result = run_sql_query(queries[selected])
+        if result:
+            df = pd.DataFrame(result)
+            st.dataframe(df, width='stretch')
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download CSV", data=csv, file_name=f"{selected}.csv", mime="text/csv")
         else:
-            st.write(f"Returned {len(rows)} rows.")
-            st.dataframe(rows)
+            st.warning("No results or data mismatch. Ensure your database has proper data loaded.")

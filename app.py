@@ -1,56 +1,46 @@
-"""
-Main entry point for Streamlit app.
-Run: streamlit run app.py
-"""
-
 import streamlit as st
 
-st.set_page_config(page_title="Cricbuzz LiveStats", layout="wide")
-
-st.title("🏏 Cricbuzz LiveStats — Real-Time Cricket Insights & SQL Analytics")
-
-st.markdown(
-    """
-Use the left sidebar to navigate between pages:
-- 🏠 Home (overview)
-- 📡 Load Player Data (fetch real data from Cricbuzz API)
-- 🟢 Live Matches (real-time from Cricbuzz API)
-- 📊 Top Stats (top batting/bowling)
-- 🧮 SQL Queries (25 analytics queries)
-- 🧑‍💻 CRUD Operations (manage players in DB)
-"""
+# ✅ Global App Configuration
+st.set_page_config(
+    page_title="🏏 Cricbuzz LiveStats",
+    page_icon="🏏",
+    layout="wide",
 )
 
-# Sidebar navigation
-st.sidebar.title("📂 Navigation")
-page = st.sidebar.radio(
-    "Go to",
-    [
-        "Home",
-        "Load Player Data",
-        "Live Matches",
-        "Top Stats",
-        "SQL Queries",
-        "CRUD Operations",
-    ],
-)
+# ===============================
+# 🧭 Sidebar Navigation
+# ===============================
+st.sidebar.title("🏏 Cricbuzz LiveStats")
+st.sidebar.markdown("Your one-stop Cricket Analytics Dashboard")
+st.sidebar.markdown("---")
 
-# Page routing
-if page == "Home":
-    import pages.home as home
-    home.app()
-elif page == "Load Player Data":
-    import pages.load_api_data as load_api_data
-    load_api_data.app()
-elif page == "Live Matches":
-    import pages.live_matches as live_matches
-    live_matches.app()
-elif page == "Top Stats":
-    import pages.top_stats as top_stats
-    top_stats.app()
-elif page == "SQL Queries":
-    import pages.sql_queries as sql_queries
-    sql_queries.app()
-elif page == "CRUD Operations":
-    import pages.crud_operations as crud
-    crud.app()
+st.sidebar.page_link("pages/home.py", label="🏠 Home")
+st.sidebar.page_link("pages/live_matches.py", label="📺 Live Matches")
+st.sidebar.page_link("pages/top_stats.py", label="📊 Top Player Stats")
+st.sidebar.page_link("pages/data_ingestion.py", label="📥 Data Ingestion")
+st.sidebar.page_link("pages/sql_queries.py", label="🧮 SQL Practice Queries")
+st.sidebar.page_link("pages/crud_operations.py", label="🛠️ CRUD Operations")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Made with ❤️ using Streamlit, MySQL & Cricbuzz API")
+
+# ===============================
+# 🏠 Main Home Section
+# ===============================
+st.title("🏏 Welcome to Cricbuzz LiveStats Dashboard")
+
+st.markdown("""
+### 🚀 Explore Real-Time Cricket Insights  
+**Cricbuzz LiveStats** brings you live data, player rankings, analytics, and direct database interaction.
+
+#### 💡 Features
+- 📺 **Live Matches** — Real-time data from Cricbuzz API  
+- 📊 **Top Stats** — Most Runs, Wickets, Hundreds, etc.  
+- 📥 **Data Ingestion** — Populate database with API data
+- 🧮 **SQL Analytics** — 25 practice queries with visual results  
+- 🛠️ **CRUD** — Manage your cricket data easily
+
+---
+
+Navigate using the sidebar to explore different sections.
+""")
