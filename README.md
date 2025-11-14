@@ -82,7 +82,26 @@ cricbuzz_livestats/
 | `schema.sql` | Database schema (tables, views, triggers) | Manual setup or reference |
 | `insert_sample_data.py` | Sample cricket data | Add more test data |
 | `add_partnership_data.py` | Partnership batting records | Add partnership data |
-| `DATABASE.md` | Complete schema documentation | Reference and learning |
+
+---
+
+### Database Schema Overview
+
+- **Tables (7)**: `Teams`, `Venues`, `Players`, `Matches`, `Batting_Performance`, `Bowling_Performance`, `Series`
+- **Key Features**: 30+ indexes, 4 materialized views (`vw_player_stats`, `vw_match_summary`, `vw_top_run_scorers`, `vw_top_wicket_takers`), 2 stored procedures (`sp_update_player_stats`, `sp_update_team_stats`), 2 triggers to refresh player aggregates, UTF8MB4 encoding, full MySQL 8 support.
+- **Relationships**: Foreign keys cascade between matches ⇄ teams/venues/series and performance tables ⇄ players/matches.
+- **Quick Reference**:
+  - Recalculate player stats: `CALL sp_update_player_stats(<player_id>);`
+  - Regenerate team stats: `CALL sp_update_team_stats(<team_id>);`
+  - Verify schema objects:
+    ```sql
+    SHOW TABLES;                      -- should list 7 tables
+    SHOW FULL TABLES WHERE Table_type = 'VIEW';
+    SHOW PROCEDURE STATUS WHERE Db = 'cricbuzz_livestats';
+    SHOW TRIGGERS;
+    ```
+
+For deeper examples (backup, performance tuning, sample queries), see the sections below.
 
 ---
 
